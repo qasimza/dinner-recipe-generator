@@ -1,11 +1,14 @@
 import logging
+import tempfile
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, Form, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from haystack import Pipeline
 
 from whats_for_dinner.config import get_settings
+from whats_for_dinner.custom_components import ExtractFoodItemsFromImage
 from whats_for_dinner.guardrails import validate_input_ingredients
 from whats_for_dinner.ingestion import create_document_store
 from whats_for_dinner.models import RecipeResponse
@@ -40,15 +43,48 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+async def extract_ingredients_from_upload(image_file: UploadFile) -> str:
+    """Extract food ingredients from an uploaded image using the helper component."""
+    suffix = Path(image_file.filename or "image.jpg").suffix or ".jpg"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=True) as temp_file:
+        contents = await image_file.read()
+        temp_file.write(contents)
+        temp_file.flush()
+        extractor = ExtractFoodItemsFromImage()
+        result = extractor.run(temp_file.name)
+    return str(result.get("answer", "")).strip()
+
+
 @app.post("/recommend_recipe")
 async def recommend_recipe_endpoint(
-    ingredients: str = Form(...),
+    ingredients: str = Form(""),
+    image_file: UploadFile | None = File(None),
 ) -> RecipeResponse:
-    """Recommend a dinner recipe based on available ingredients."""
+    """Recommend a dinner recipe based on text ingredients and/or an ingredient photo."""
+    extracted_ingredients = ""
+    if image_file is not None:
+        try:
+            extracted_ingredients = await extract_ingredients_from_upload(image_file)
+        except Exception:
+            logger.warning("Image ingredient extraction failed", exc_info=True)
+            raise HTTPException(status_code=422, detail="Could not process the uploaded image.")
+
+    combined_ingredients = ", ".join(
+        part.strip() for part in [ingredients, extracted_ingredients] if part and part.strip()
+    )
+    if not combined_ingredients:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide at least one ingredient or an image containing ingredients.",
+        )
+
     if rag_pipeline is None:
         raise HTTPException(status_code=503, detail="RAG pipeline not initialized")
+
     try:
-        input_validation = validate_input_ingredients(ingredients, settings=get_settings())
+        input_validation = validate_input_ingredients(
+            combined_ingredients, settings=get_settings()
+        )
     except Exception:
         logger.warning("Input guardrail validation failed", exc_info=True)
         raise HTTPException(status_code=503, detail="Input guardrail unavailable")
@@ -63,5 +99,5 @@ async def recommend_recipe_endpoint(
             },
         )
 
-    result = recommend_recipe(ingredients, rag_pipeline)
+    result = recommend_recipe(combined_ingredients, rag_pipeline)
     return RecipeResponse(recipe=result)
