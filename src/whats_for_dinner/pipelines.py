@@ -93,3 +93,27 @@ def build_rag_pipeline(
     pipeline.connect("prompt_builder", "llm")
 
     return pipeline
+
+
+def recommend_recipe(ingredients: str, pipeline: Pipeline) -> str:
+    """Run the RAG pipeline to recommend a recipe based on available ingredients.
+
+    Args:
+        ingredients: A text description of the user's available ingredients.
+        pipeline: A pre-built RAG pipeline from build_rag_pipeline().
+
+    Returns:
+        Markdown-formatted recipe recommendation from GPT-4o.
+    """
+    result = pipeline.run(
+        {
+            "embedder": {"text": ingredients},
+            "prompt_builder": {"query": ingredients},
+        }
+    )
+
+    replies = result["llm"]["replies"]
+    if not replies:
+        return "Sorry, I couldn't generate a recipe recommendation. Please try again."
+
+    return replies[0]
