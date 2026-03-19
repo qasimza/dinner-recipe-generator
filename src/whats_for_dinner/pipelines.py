@@ -1,5 +1,15 @@
 import logging
 
+from haystack import Pipeline
+from haystack.components.builders import PromptBuilder
+from haystack.components.embedders import OpenAITextEmbedder
+from haystack.components.generators import OpenAIGenerator
+from haystack.utils import Secret
+from haystack_integrations.components.retrievers.pgvector import PgvectorEmbeddingRetriever
+from haystack_integrations.document_stores.pgvector import PgvectorDocumentStore
+
+from whats_for_dinner.config import Settings
+
 logger = logging.getLogger(__name__)
 
 RECIPE_PROMPT_TEMPLATE = """\
@@ -44,3 +54,42 @@ Respond in Markdown with the following structure:
 Keep the response concise and actionable. Do not repeat the user's query or add unnecessary preamble.
 </output_format>
 """
+
+
+def build_rag_pipeline(
+    document_store: PgvectorDocumentStore, settings: Settings
+) -> Pipeline:
+    """Build a Haystack RAG pipeline for recipe recommendation.
+
+    Args:
+        document_store: PgvectorDocumentStore with embedded recipe documents.
+        settings: Application settings (API key, model names, top_k).
+
+    Returns:
+        A Pipeline wiring: OpenAITextEmbedder -> PgvectorEmbeddingRetriever -> PromptBuilder -> OpenAIGenerator.
+    """
+    api_key = Secret.from_token(settings.openai_api_key)
+
+    pipeline = Pipeline()
+    pipeline.add_component(
+        "embedder",
+        OpenAITextEmbedder(api_key=api_key, model=settings.embedding_model),
+    )
+    pipeline.add_component(
+        "retriever",
+        PgvectorEmbeddingRetriever(document_store=document_store, top_k=settings.top_k),
+    )
+    pipeline.add_component(
+        "prompt_builder",
+        PromptBuilder(template=RECIPE_PROMPT_TEMPLATE),
+    )
+    pipeline.add_component(
+        "llm",
+        OpenAIGenerator(api_key=api_key, model=settings.llm_model),
+    )
+
+    pipeline.connect("embedder.embedding", "retriever.query_embedding")
+    pipeline.connect("retriever", "prompt_builder.documents")
+    pipeline.connect("prompt_builder", "llm")
+
+    return pipeline
