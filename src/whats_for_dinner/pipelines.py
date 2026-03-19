@@ -1,4 +1,5 @@
 import logging
+import json
 
 from haystack import Pipeline
 from haystack.components.builders import PromptBuilder
@@ -9,6 +10,7 @@ from haystack_integrations.components.retrievers.pgvector import PgvectorEmbeddi
 from haystack_integrations.document_stores.pgvector import PgvectorDocumentStore
 
 from whats_for_dinner.config import Settings
+from whats_for_dinner.models import RecipeRecommendation
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +46,16 @@ user could make with their ingredients instead, based on general cooking knowled
 </grounding_rules>
 
 <output_format>
-Respond in Markdown with the following structure:
-1. Recipe title as a level-2 heading
-2. A short sentence on why this recipe is a good match
-3. Ingredients as a bullet list (note any substitutions)
-4. Instructions as a numbered list
-5. If modifications were made, a brief "Modifications" section explaining what changed and why
+Return ONLY valid JSON with this exact schema:
+{
+  "title": "string",
+  "match_reason": "string",
+  "ingredients": ["string", "..."],
+  "instructions": ["string", "..."],
+  "modifications": "string or null"
+}
 
-Keep the response concise and actionable. Do not repeat the user's query or add unnecessary preamble.
+Do not include markdown, code fences, or additional keys.
 </output_format>
 """
 
@@ -81,11 +85,18 @@ def build_rag_pipeline(
     )
     pipeline.add_component(
         "prompt_builder",
-        PromptBuilder(template=RECIPE_PROMPT_TEMPLATE),
+        PromptBuilder(
+            template=RECIPE_PROMPT_TEMPLATE,
+            required_variables=["query", "documents"],
+        ),
     )
     pipeline.add_component(
         "llm",
-        OpenAIGenerator(api_key=api_key, model=settings.llm_model),
+        OpenAIGenerator(
+            api_key=api_key,
+            model=settings.llm_model,
+            generation_kwargs={"response_format": RecipeRecommendation},
+        ),
     )
 
     pipeline.connect("embedder.embedding", "retriever.query_embedding")
@@ -116,4 +127,11 @@ def recommend_recipe(ingredients: str, pipeline: Pipeline) -> str:
     if not replies:
         return "Sorry, I couldn't generate a recipe recommendation. Please try again."
 
-    return replies[0]
+    raw_reply = replies[0] if isinstance(replies[0], str) else str(replies[0])
+    try:
+        recommendation = RecipeRecommendation.model_validate(json.loads(raw_reply))
+        logger.info("Structured recommendation: %s", recommendation.model_dump_json())
+        return recommendation.to_markdown()
+    except Exception:
+        logger.warning("Failed to parse structured recommendation", exc_info=True)
+        return raw_reply
