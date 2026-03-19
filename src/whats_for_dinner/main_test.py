@@ -41,6 +41,7 @@ async def test_recommend_recipe_text():
 @pytest.mark.anyio
 async def test_recommend_recipe_rejects_non_food(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(main, "rag_pipeline", object())
+    monkeypatch.setattr(main, "rag_document_store", object())
     monkeypatch.setattr(
         main,
         "validate_input_ingredients",
@@ -67,6 +68,7 @@ async def test_recommend_recipe_rejects_non_food(monkeypatch: pytest.MonkeyPatch
 @pytest.mark.anyio
 async def test_recommend_recipe_allows_food_only(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(main, "rag_pipeline", object())
+    monkeypatch.setattr(main, "rag_document_store", object())
     monkeypatch.setattr(
         main,
         "validate_input_ingredients",
@@ -92,6 +94,7 @@ async def test_recommend_recipe_allows_food_only(monkeypatch: pytest.MonkeyPatch
 @pytest.mark.anyio
 async def test_recommend_recipe_image_only(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(main, "rag_pipeline", object())
+    monkeypatch.setattr(main, "rag_document_store", object())
     async def fake_extract(*_args, **_kwargs) -> str:
         return "tomato, basil"
     monkeypatch.setattr(main, "extract_ingredients_from_upload", fake_extract)
@@ -120,6 +123,7 @@ async def test_recommend_recipe_image_only(monkeypatch: pytest.MonkeyPatch):
 @pytest.mark.anyio
 async def test_recommend_recipe_combines_text_and_image(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(main, "rag_pipeline", object())
+    monkeypatch.setattr(main, "rag_document_store", object())
     async def fake_extract(*_args, **_kwargs) -> str:
         return "basil"
     monkeypatch.setattr(main, "extract_ingredients_from_upload", fake_extract)

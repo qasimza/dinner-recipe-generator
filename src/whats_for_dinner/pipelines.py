@@ -1,7 +1,10 @@
 import logging
 import json
+import re
+from datetime import datetime, UTC
+from pathlib import Path
 
-from haystack import Pipeline
+from haystack import Document, Pipeline
 from haystack.components.builders import PromptBuilder
 from haystack.components.embedders import OpenAITextEmbedder
 from haystack.components.generators import OpenAIGenerator
@@ -11,6 +14,7 @@ from haystack_integrations.document_stores.pgvector import PgvectorDocumentStore
 
 from whats_for_dinner.config import Settings, get_settings
 from whats_for_dinner.guardrails import validate_recipe_output
+from whats_for_dinner.ingestion import build_indexing_pipeline
 from whats_for_dinner.models import RecipeRecommendation
 
 logger = logging.getLogger(__name__)
@@ -107,12 +111,76 @@ def build_rag_pipeline(
     return pipeline
 
 
-def recommend_recipe(ingredients: str, pipeline: Pipeline) -> str:
+def _get_top_retrieval_score(result: dict) -> float | None:
+    documents = result.get("retriever", {}).get("documents", [])
+    if not documents:
+        return None
+    top = documents[0]
+    score = getattr(top, "score", None)
+    if isinstance(score, (float, int)):
+        return float(score)
+    return None
+
+
+def _persist_generated_recipe(
+    recommendation: RecipeRecommendation,
+    ingredients: str,
+    settings: Settings,
+    document_store: PgvectorDocumentStore,
+) -> None:
+    output_dir = Path(settings.generated_recipes_dir)
+    if not output_dir.is_absolute():
+        output_dir = Path(__file__).resolve().parents[2] / settings.generated_recipes_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    slug = re.sub(r"[^a-z0-9]+", "-", recommendation.title.lower()).strip("-") or "recipe"
+    ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    filename = f"{ts}_{slug}.txt"
+    file_path = output_dir / filename
+
+    file_text = (
+        f"{recommendation.title}\n\n"
+        f"Ingredients:\n" + "\n".join(f"- {item}" for item in recommendation.ingredients) + "\n\n"
+        "Instructions:\n"
+        + "\n".join(
+            f"{idx}. {step}"
+            for idx, step in enumerate(recommendation.instructions, start=1)
+        )
+        + "\n\n"
+        f"Generated From Ingredients:\n{ingredients}\n"
+    )
+    file_path.write_text(file_text)
+
+    generated_doc = Document(
+        content=f"{recommendation.title}\n\n{', '.join(recommendation.ingredients)}",
+        meta={
+            "title": recommendation.title,
+            "instructions": "\n".join(recommendation.instructions),
+            "source_file": filename,
+            "generated": True,
+            "match_reason": recommendation.match_reason,
+            "modifications": recommendation.modifications or "",
+        },
+    )
+    indexing_pipeline = build_indexing_pipeline(document_store, settings.openai_api_key)
+    indexing_pipeline.run({"embedder": {"documents": [generated_doc]}})
+
+    logger.info("Persisted generated recipe to %s and pgvector", file_path)
+
+
+def recommend_recipe(
+    ingredients: str,
+    pipeline: Pipeline,
+    settings: Settings | None = None,
+    document_store: PgvectorDocumentStore | None = None,
+) -> str:
     """Run the RAG pipeline to recommend a recipe based on available ingredients.
 
     Args:
         ingredients: A text description of the user's available ingredients.
         pipeline: A pre-built RAG pipeline from build_rag_pipeline().
+        settings: Optional settings object; falls back to get_settings().
+        document_store: Optional document store for persisting cache misses.
 
     Returns:
         Markdown-formatted recipe recommendation from GPT-4o.
@@ -130,8 +198,9 @@ def recommend_recipe(ingredients: str, pipeline: Pipeline) -> str:
 
     raw_reply = replies[0] if isinstance(replies[0], str) else str(replies[0])
     try:
+        resolved_settings = settings or get_settings()
         recommendation = RecipeRecommendation.model_validate(json.loads(raw_reply))
-        output_validation = validate_recipe_output(recommendation, settings=get_settings())
+        output_validation = validate_recipe_output(recommendation, settings=resolved_settings)
         if not output_validation.is_valid:
             logger.warning("Output guardrail blocked response: %s", output_validation.issues)
             return (
@@ -139,6 +208,30 @@ def recommend_recipe(ingredients: str, pipeline: Pipeline) -> str:
                 "Please try a different ingredient list."
             )
         logger.info("Structured recommendation: %s", recommendation.model_dump_json())
+
+        top_score = _get_top_retrieval_score(result)
+        cache_hit = (
+            top_score is not None
+            and top_score >= resolved_settings.rag_cache_similarity_threshold
+        )
+        if cache_hit:
+            logger.info(
+                "RAG cache hit (score=%.4f >= threshold=%.4f). Not persisting generated recipe.",
+                top_score,
+                resolved_settings.rag_cache_similarity_threshold,
+            )
+        elif document_store is not None:
+            logger.info(
+                "RAG cache miss (score=%s). Persisting generated recipe.",
+                "none" if top_score is None else f"{top_score:.4f}",
+            )
+            _persist_generated_recipe(
+                recommendation=recommendation,
+                ingredients=ingredients,
+                settings=resolved_settings,
+                document_store=document_store,
+            )
+
         return recommendation.to_markdown()
     except Exception:
         logger.warning("Failed to parse structured recommendation", exc_info=True)

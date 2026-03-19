@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from haystack import Pipeline
+from haystack_integrations.document_stores.pgvector import PgvectorDocumentStore
 
 from whats_for_dinner.config import get_settings
 from whats_for_dinner.custom_components import ExtractFoodItemsFromImage
@@ -17,17 +18,18 @@ from whats_for_dinner.pipelines import build_rag_pipeline, recommend_recipe
 logger = logging.getLogger(__name__)
 
 rag_pipeline: Pipeline | None = None
+rag_document_store: PgvectorDocumentStore | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    global rag_pipeline
+    global rag_pipeline, rag_document_store
     try:
         settings = get_settings()
-        document_store = create_document_store(
+        rag_document_store = create_document_store(
             settings.database_url, recreate_table=False
         )
-        rag_pipeline = build_rag_pipeline(document_store, settings)
+        rag_pipeline = build_rag_pipeline(rag_document_store, settings)
         logger.info("RAG pipeline initialized")
     except Exception:
         logger.warning("Could not initialize RAG pipeline", exc_info=True)
@@ -81,7 +83,7 @@ async def recommend_recipe_endpoint(
             detail="Provide at least one ingredient or an image containing ingredients.",
         )
 
-    if rag_pipeline is None:
+    if rag_pipeline is None or rag_document_store is None:
         raise HTTPException(status_code=503, detail="RAG pipeline not initialized")
 
     try:
@@ -102,5 +104,10 @@ async def recommend_recipe_endpoint(
             },
         )
 
-    result = recommend_recipe(combined_ingredients, rag_pipeline)
+    result = recommend_recipe(
+        combined_ingredients,
+        rag_pipeline,
+        settings=settings,
+        document_store=rag_document_store,
+    )
     return RecipeResponse(recipe=result)
