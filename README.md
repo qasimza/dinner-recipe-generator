@@ -78,6 +78,7 @@ uv run uvicorn whats_for_dinner.main:app --reload
 - Garlic, salt and pepper to taste, and olive oil are the most commonly occurring/overlapping ingredients. 
 - Randomply sampling `top_k=3` seems reasonable for variety. 
 
-
+## Notes on my approach
+- Follow Test Driven Development (TDD), i.e. write unit tests before the actual code. Following a strict "Red-Green-Refactor" cycle. Writing a failing test, making it pass with minimal code, and then refactoring.
   
 
