@@ -124,6 +124,11 @@ The service extracts ingredients from the image, merges them with text ingredien
 
 ## Initial Findings and Design Decisions
 
+### Diagram 
+
+![Recipe recommendation flow](docs/assets/recipe-flow-diagram.png)
+
+
 ### Structure
 
 - All recipes follow a consistent format.
