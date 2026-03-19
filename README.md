@@ -52,3 +52,5 @@ uv run uvicorn whats_for_dinner.main:app --reload
 ## Assumptions
 
 - The application is scoped to **dinner recipes only** — we're not catering to snacks, breakfast, or lunch.
+- We assume that the user has all utencils and appliances needed for the recipes, i.e. a fully equipped kitchen. 
+- We assume the user is adept at cooking - we do not need to adjust the the difficulty level of a recipe according to a user's skill level. 

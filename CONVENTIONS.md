@@ -13,15 +13,13 @@
 ## Function Categories
 
 1. Business Logic Functions
-
-   - Readable, top-down flow
-   - Minimal implementation details
-   - Clear conditional paths
-
+  - Readable, top-down flow
+  - Minimal implementation details
+  - Clear conditional paths
 2. Helper Functions
-   - Functional and stateless
-   - Single purpose
-   - Implementation focused
+  - Functional and stateless
+  - Single purpose
+  - Implementation focused
 
 Note: Split functions that serve multiple purposes based on conditions
 
@@ -221,6 +219,7 @@ Where `description` is a clear, concise summary of the change, and `type` must b
 - `refactor`: Code restructuring without adding features or fixing bugs
 
 For breaking changes, append a `!` after the type. Examples:
+
 ```
 feat: implement user authentication flow
 fix: handle empty API responses
@@ -240,7 +239,6 @@ Where `type` matches our commit types and `description` is a brief, hyphen-separ
 - `fix-api-response-handling`
 - `chore-dependency-updates`
 
-
 Optionally, include the ticket number after the type and before the description:
 
 - `feat-CON-123-user-authentication`
@@ -248,11 +246,13 @@ Optionally, include the ticket number after the type and before the description:
 ## Commit Signing
 
 We recommend signing commits with your SSH or GPG key, see
-- https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits and
-- https://docs.github.com/en/authentication/managing-commit-signature-verification/telling-git-about-your-signing-key#telling-git-about-your-ssh-key for more information.
+
+- [https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits) and
+- [https://docs.github.com/en/authentication/managing-commit-signature-verification/telling-git-about-your-signing-key#telling-git-about-your-ssh-key](https://docs.github.com/en/authentication/managing-commit-signature-verification/telling-git-about-your-signing-key#telling-git-about-your-ssh-key) for more information.
 
 When creating commits, use the `-s` flag to sign the commit, for example:
 
 ```
 git commit -s -m "feat: implement user authentication flow"
 ```
+
