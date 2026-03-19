@@ -106,6 +106,10 @@ uv run pytest src/whats_for_dinner/ingestion_test.py -v
 - Garlic, salt and pepper to taste, and olive oil are the most commonly occurring/overlapping ingredients. 
 - Randomply sampling `top_k=3` seems reasonable for variety.
 
+### Ingestion
+
+- The ingestion CLI (`python -m whats_for_dinner.ingestion`) drops and recreates the `recipes` table on every run. This is a deliberate choice for a small, static dataset — it guarantees a clean slate and avoids duplicate entries without needing upsert logic. The API server connects to the existing table without recreating it.
+
 ## Notes on my approach
 
 - Follow Test Driven Development (TDD), i.e. write unit tests before the actual code. Following a strict "Red-Green-Refactor" cycle. Writing a failing test, making it pass with minimal code, and then refactoring.

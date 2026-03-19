@@ -64,14 +64,22 @@ def load_recipes(recipes_dir: Path) -> list[Document]:
     return documents
 
 
-def create_document_store(connection_string: str) -> PgvectorDocumentStore:
-    """Create a PgvectorDocumentStore configured for OpenAI text-embedding-3-small (1536 dims)."""
+def create_document_store(
+    connection_string: str, *, recreate_table: bool = True
+) -> PgvectorDocumentStore:
+    """Create a PgvectorDocumentStore configured for OpenAI text-embedding-3-small (1536 dims).
+
+    Args:
+        connection_string: PostgreSQL connection string.
+        recreate_table: If True, drop and recreate the table (for ingestion).
+            Set to False when connecting for reads (e.g. in the API server).
+    """
     return PgvectorDocumentStore(
         connection_string=Secret.from_token(connection_string),
         table_name="recipes",
         embedding_dimension=1536,
         vector_function="cosine_similarity",
-        recreate_table=True,
+        recreate_table=recreate_table,
         search_strategy="hnsw",
     )
 
