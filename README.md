@@ -110,3 +110,6 @@ uv run pytest src/whats_for_dinner/ingestion_test.py -v
 
 - Follow Test Driven Development (TDD), i.e. write unit tests before the actual code. Following a strict "Red-Green-Refactor" cycle. Writing a failing test, making it pass with minimal code, and then refactoring.
 
+## References 
+
+- [Prompt Guidelines](https://developers.openai.com/cookbook/examples/gpt-5/gpt-5-2_prompting_guide)
