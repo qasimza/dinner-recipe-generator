@@ -34,7 +34,7 @@ Input ingredients:
     llm = OpenAIGenerator(
         api_key=Secret.from_token(settings.openai_api_key),
         model=settings.llm_model,
-        generation_kwargs={"response_format": InputValidationResult},
+        generation_kwargs={"response_format": {"type": "json_object"}},
     )
     result = llm.run(prompt=prompt)
     replies = result["replies"]
@@ -62,7 +62,7 @@ Recipe JSON:
     llm = OpenAIGenerator(
         api_key=Secret.from_token(settings.openai_api_key),
         model=settings.llm_model,
-        generation_kwargs={"response_format": OutputValidationResult},
+        generation_kwargs={"response_format": {"type": "json_object"}},
     )
     result = llm.run(prompt=prompt)
     replies = result["replies"]

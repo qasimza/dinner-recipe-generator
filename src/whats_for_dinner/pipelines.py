@@ -96,7 +96,7 @@ def build_rag_pipeline(
         OpenAIGenerator(
             api_key=api_key,
             model=settings.llm_model,
-            generation_kwargs={"response_format": RecipeRecommendation},
+            generation_kwargs={"response_format": {"type": "json_object"}},
         ),
     )
 

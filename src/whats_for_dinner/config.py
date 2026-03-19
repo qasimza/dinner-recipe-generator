@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import ClassVar
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -12,9 +13,9 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o"
     top_k: int = 3
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(env_file=".env")
 
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return Settings()  # pyright: ignore[reportCallIssue]

@@ -55,26 +55,70 @@ uv run uvicorn whats_for_dinner.main:app --reload
 http://127.0.0.1:8000/docs
 ```
 
-### 8 Running Tests 
+### 8 Running Tests
 
 #### Run all tests
+
 ```bash
 uv run pytest src/ -v
 ```
 
 #### Run a specific test by name
+
 ```bash
 uv run pytest src/ -k test_health -v
 ```
 
 #### Run tests in a specific file
+
 ```bash
 uv run pytest src/whats_for_dinner/ingestion_test.py -v
 ```
 
+#### Run unit tests only (skip integration)
+
+```bash
+uv run pytest src/ -m "not integration" -v
+```
+
+### 9. Lint and type-check
+
+```bash
+uv run ruff check src
+uv run basedpyright src
+```
+
+## API Usage
+
+The `/recommend_recipe` endpoint accepts ingredient text, an image upload, or both.
+
+### Text only
+
+```bash
+curl -X POST "http://127.0.0.1:8000/recommend_recipe" \
+  -F "ingredients=chicken, garlic, soy sauce"
+```
+
+### Image only
+
+```bash
+curl -X POST "http://127.0.0.1:8000/recommend_recipe" \
+  -F "image_file=@data/photos/01.webp"
+```
+
+### Text + image
+
+```bash
+curl -X POST "http://127.0.0.1:8000/recommend_recipe" \
+  -F "ingredients=tomato, pasta" \
+  -F "image_file=@data/photos/01.webp"
+```
+
+The service extracts ingredients from the image, merges them with text ingredients, validates that inputs are food-only, generates structured recipe JSON internally, validates output safety, and returns markdown to the client.
+
 ## Assumptions
 
-- The application is scoped to **dinner recipes only** — we're not catering to snacks, breakfast, or lunch.
+- The application is scoped to **dinner recipes only** - we're not catering to snacks, breakfast, or lunch.
 - We assume that the user has all utencils and appliances needed for the recipes, i.e. a fully equipped kitchen. 
 - We assume the user is adept at cooking - we do not need to adjust the the difficulty level of a recipe according to a user's skill level.
 
@@ -114,6 +158,7 @@ uv run pytest src/whats_for_dinner/ingestion_test.py -v
 
 - Follow Test Driven Development (TDD), i.e. write unit tests before the actual code. Following a strict "Red-Green-Refactor" cycle. Writing a failing test, making it pass with minimal code, and then refactoring.
 
-## References 
+## References
 
 - [Prompt Guidelines](https://developers.openai.com/cookbook/examples/gpt-5/gpt-5-2_prompting_guide)
+

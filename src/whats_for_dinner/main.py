@@ -43,7 +43,7 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-async def extract_ingredients_from_upload(image_file: UploadFile) -> str:
+async def extract_ingredients_from_upload(image_file: UploadFile, api_key: str) -> str:
     """Extract food ingredients from an uploaded image using the helper component."""
     suffix = Path(image_file.filename or "image.jpg").suffix or ".jpg"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=True) as temp_file:
@@ -51,7 +51,7 @@ async def extract_ingredients_from_upload(image_file: UploadFile) -> str:
         temp_file.write(contents)
         temp_file.flush()
         extractor = ExtractFoodItemsFromImage()
-        result = extractor.run(temp_file.name)
+        result = extractor.run(temp_file.name, api_key=api_key)
     return str(result.get("answer", "")).strip()
 
 
@@ -61,10 +61,13 @@ async def recommend_recipe_endpoint(
     image_file: UploadFile | None = File(None),
 ) -> RecipeResponse:
     """Recommend a dinner recipe based on text ingredients and/or an ingredient photo."""
+    settings = get_settings()
     extracted_ingredients = ""
     if image_file is not None:
         try:
-            extracted_ingredients = await extract_ingredients_from_upload(image_file)
+            extracted_ingredients = await extract_ingredients_from_upload(
+                image_file, settings.openai_api_key
+            )
         except Exception:
             logger.warning("Image ingredient extraction failed", exc_info=True)
             raise HTTPException(status_code=422, detail="Could not process the uploaded image.")
@@ -83,7 +86,7 @@ async def recommend_recipe_endpoint(
 
     try:
         input_validation = validate_input_ingredients(
-            combined_ingredients, settings=get_settings()
+            combined_ingredients, settings=settings
         )
     except Exception:
         logger.warning("Input guardrail validation failed", exc_info=True)

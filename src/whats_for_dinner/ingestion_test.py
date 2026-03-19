@@ -31,5 +31,6 @@ def test_load_recipes():
 def test_load_recipes_content_is_title_and_ingredients():
     docs = load_recipes(RECIPES_DIR)
     doc = docs[0]
-    assert doc.meta["title"] in doc.content
-    assert "Instructions" not in doc.content
+    content = doc.content or ""
+    assert doc.meta["title"] in content
+    assert "Instructions" not in content

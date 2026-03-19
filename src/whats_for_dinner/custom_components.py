@@ -1,9 +1,10 @@
-from haystack import component
-from PIL import Image
-
-import openai
 import base64
 import io
+from typing import Any
+
+from haystack import component
+from openai import OpenAI
+from PIL import Image
 
 @component()
 class ExtractFoodItemsFromImage:
@@ -13,12 +14,13 @@ class ExtractFoodItemsFromImage:
     def run(
         self,
         image_path: str,
-    ) -> str:
+        api_key: str,
+    ) -> dict[str, str]:
         model = "gpt-4o"
 
         image_base64 = self.image_to_base64(image_path)
 
-        messages = [
+        messages: Any = [
             {
                 "role": "user",
                 "content": [
@@ -37,13 +39,14 @@ class ExtractFoodItemsFromImage:
             },
         ]
 
-        client = openai
-
-        response = client.chat.completions.create(model=model, messages=messages, stream=False)
-        content = response.choices[0].message.content
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(  # pyright: ignore[reportCallIssue, reportArgumentType]
+            model=model, messages=messages, stream=False
+        )
+        content = response.choices[0].message.content or ""
 
         return {
-            "answer": content,
+            "answer": str(content),
         }
 
     def image_to_base64(self, image_path: str) -> str:
@@ -68,5 +71,4 @@ class ExtractFoodItemsFromImage:
                 # Encode to base64
                 return base64.b64encode(byte_arr).decode('utf-8')
         except Exception as e:
-            print(f"Error processing image: {e}")
-            return None
+            raise RuntimeError(f"Error processing image: {e}") from e
