@@ -49,6 +49,11 @@ uv run python -m whats_for_dinner.ingestion
 uv run uvicorn whats_for_dinner.main:app --reload
 ```
 
+### 7. Access the Fast API UI for the App
+```bash
+http://127.0.0.1:8000/docs
+```
+
 ## Assumptions
 
 - The application is scoped to **dinner recipes only** — we're not catering to snacks, breakfast, or lunch.
