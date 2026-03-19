@@ -4,6 +4,7 @@ from pathlib import Path
 from haystack import Document, Pipeline
 from haystack.components.embedders import OpenAIDocumentEmbedder
 from haystack.components.writers import DocumentWriter
+from haystack.utils import Secret
 from haystack_integrations.document_stores.pgvector import PgvectorDocumentStore
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def load_recipes(recipes_dir: Path) -> list[Document]:
 def create_document_store(connection_string: str) -> PgvectorDocumentStore:
     """Create a PgvectorDocumentStore configured for OpenAI text-embedding-3-small (1536 dims)."""
     return PgvectorDocumentStore(
-        connection_string=connection_string,
+        connection_string=Secret.from_token(connection_string),
         table_name="recipes",
         embedding_dimension=1536,
         vector_function="cosine_similarity",
@@ -90,8 +91,34 @@ def build_indexing_pipeline(
     pipeline = Pipeline()
     pipeline.add_component(
         "embedder",
-        OpenAIDocumentEmbedder(api_key=api_key, model="text-embedding-3-small"),
+        OpenAIDocumentEmbedder(api_key=Secret.from_token(api_key), model="text-embedding-3-small"),
     )
     pipeline.add_component("writer", DocumentWriter(document_store=document_store))
     pipeline.connect("embedder", "writer")
     return pipeline
+
+
+def run_ingestion() -> None:
+    """Load recipes, embed them, and write to Postgres. Intended as a CLI entrypoint."""
+    from whats_for_dinner.config import get_settings
+
+    logging.basicConfig(level=logging.INFO)
+
+    settings = get_settings()
+    recipes_dir = Path(__file__).resolve().parents[2] / "data" / "recipes"
+
+    logger.info("Creating document store...")
+    document_store = create_document_store(settings.database_url)
+
+    logger.info("Loading recipes from %s...", recipes_dir)
+    documents = load_recipes(recipes_dir)
+
+    logger.info("Building indexing pipeline and embedding %d documents...", len(documents))
+    pipeline = build_indexing_pipeline(document_store, settings.openai_api_key)
+    result = pipeline.run({"embedder": {"documents": documents}})
+
+    logger.info("Ingestion complete. Documents written: %s", result["writer"]["documents_written"])
+
+
+if __name__ == "__main__":
+    run_ingestion()
