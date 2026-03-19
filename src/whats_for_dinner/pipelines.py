@@ -19,14 +19,14 @@ from whats_for_dinner.models import RecipeRecommendation
 
 logger = logging.getLogger(__name__)
 
-RECIPE_PROMPT_TEMPLATE = """\
-You are a helpful dinner recipe assistant. Based on the ingredients the user has available, \
-recommend the best matching recipe from the provided context.
+RECIPE_PROMPT_TEMPLATE = """
+You are a helpful dinner recipe assistant. Based on the ingredients the user has available, 
+create a practical recipe by using the provided context as reference examples.
 
 ## User's available ingredients
 {{ query }}
 
-## Retrieved recipes
+## Reference recipes
 {% for doc in documents %}
 ### {{ doc.meta.title }}
 **Ingredients:** {{ doc.content }}
@@ -34,18 +34,15 @@ recommend the best matching recipe from the provided context.
 {% endfor %}
 
 <task>
-Pick the single best matching recipe from the retrieved recipes above. \
-When choosing, focus on distinctive ingredients (proteins, vegetables, spices) rather than \
-common pantry staples like garlic, salt, pepper, and olive oil, which appear in most recipes \
-and are not useful for differentiating between them.
+Use the retrieved recipes above as EXAMPLES and inspiration, not as options to select from.
+Synthesize one recipe tailored to the user's ingredients by combining patterns, techniques, or flavor ideas from relevant references.
+Focus on distinctive ingredients (proteins, vegetables, spices) rather than common pantry staples like garlic, salt, pepper, and olive oil, which appear in most recipes and are not useful for matching.
 </task>
 
 <grounding_rules>
-- Prefer recommending recipes from the retrieved context. If none are a reasonable match, you may propose a legitimate recipe based on general cooking knowledge.
-- If the user is missing ingredients from the chosen recipe, adapt it by suggesting \
-substitutions or modifying the steps to work with only what the user has. Clearly note any \
-modifications you made.
-- If none of the retrieved recipes are a reasonable match, say so plainly and suggest what the \
+- Ground your recipe in the retrieved context when possible, but do not copy a single retrieved recipe verbatim.
+- If useful ingredients are missing from reference recipes, adapt with substitutions or modified steps so the recipe works with what the user has. Clearly note any modifications you made.
+- If none of the retrieved recipes are a reasonable match, say so plainly and suggest what the 
 user could make with their ingredients instead, based on general cooking knowledge.
 - Do not ask clarifying questions. If the query is ambiguous, state your interpretation and proceed.
 </grounding_rules>
@@ -122,6 +119,81 @@ def _get_top_retrieval_score(result: dict) -> float | None:
     return None
 
 
+def _extract_items(text: str) -> list[str]:
+    normalized = text.replace("\r\n", "\n")
+    parts = re.split(r"[\n,;]+", normalized)
+    items: list[str] = []
+    for part in parts:
+        item = part.strip()
+        if not item:
+            continue
+        item = re.sub(r"^[-*]\s*", "", item)
+        item = re.sub(r"^\d+\.\s*", "", item)
+        if item:
+            items.append(item)
+    return items
+
+
+def _normalize_ingredient(item: str) -> str:
+    normalized = item.lower()
+    normalized = re.sub(r"\(.*?\)", "", normalized)
+    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = re.sub(r"^\d+(\.\d+)?\s*[a-z]+\s+", "", normalized)
+    return normalized
+
+
+def _extract_document_ingredients(document: Document) -> list[str]:
+    content = document.content or ""
+    title = str(document.meta.get("title", "")).strip()
+    ingredients_block = content
+    if title and content.startswith(title):
+        ingredients_block = content[len(title) :].strip()
+    return _extract_items(ingredients_block)
+
+
+def _extract_document_instructions(document: Document) -> list[str]:
+    instructions = str(document.meta.get("instructions", "")).strip()
+    return _extract_items(instructions)
+
+
+def _all_recipe_ingredients_available(ingredients: str, document: Document) -> bool:
+    user_items = {
+        _normalize_ingredient(item)
+        for item in _extract_items(ingredients)
+        if _normalize_ingredient(item)
+    }
+    recipe_items = {
+        _normalize_ingredient(item)
+        for item in _extract_document_ingredients(document)
+        if _normalize_ingredient(item)
+    }
+    if not user_items or not recipe_items:
+        return False
+    return recipe_items.issubset(user_items)
+
+
+def _recommendation_from_document(document: Document) -> RecipeRecommendation:
+    title = str(document.meta.get("title", "")).strip() or "Recipe"
+    ingredients = _extract_document_ingredients(document)
+    instructions = _extract_document_instructions(document)
+    return RecipeRecommendation(
+        title=title,
+        match_reason="Exact cache match: you already have all required ingredients for this recipe.",
+        ingredients=ingredients,
+        instructions=instructions,
+        modifications=None,
+    )
+
+
+def _retrieve_documents(ingredients: str, pipeline: Pipeline) -> list[Document]:
+    embedder = pipeline.get_component("embedder")
+    retriever = pipeline.get_component("retriever")
+    embedding_result = embedder.run(text=ingredients)
+    retrieval_result = retriever.run(query_embedding=embedding_result["embedding"])
+    return retrieval_result.get("documents", [])
+
+
 def _persist_generated_recipe(
     recommendation: RecipeRecommendation,
     ingredients: str,
@@ -185,6 +257,12 @@ def recommend_recipe(
     Returns:
         Markdown-formatted recipe recommendation from GPT-4o.
     """
+    retrieved_documents = _retrieve_documents(ingredients, pipeline)
+    top_document = retrieved_documents[0] if retrieved_documents else None
+    if top_document is not None and _all_recipe_ingredients_available(ingredients, top_document):
+        logger.info("Exact cache hit by ingredient coverage. Returning original cached recipe.")
+        return _recommendation_from_document(top_document).to_markdown()
+
     result = pipeline.run(
         {
             "embedder": {"text": ingredients},
@@ -210,19 +288,14 @@ def recommend_recipe(
         logger.info("Structured recommendation: %s", recommendation.model_dump_json())
 
         top_score = _get_top_retrieval_score(result)
-        cache_hit = (
+        similar_match = (
             top_score is not None
             and top_score >= resolved_settings.rag_cache_similarity_threshold
         )
-        if cache_hit:
+        if document_store is not None:
             logger.info(
-                "RAG cache hit (score=%.4f >= threshold=%.4f). Not persisting generated recipe.",
-                top_score,
-                resolved_settings.rag_cache_similarity_threshold,
-            )
-        elif document_store is not None:
-            logger.info(
-                "RAG cache miss (score=%s). Persisting generated recipe.",
+                "Persisting generated recipe (%s, score=%s).",
+                "similar match" if similar_match else "no good match",
                 "none" if top_score is None else f"{top_score:.4f}",
             )
             _persist_generated_recipe(
@@ -230,6 +303,11 @@ def recommend_recipe(
                 ingredients=ingredients,
                 settings=resolved_settings,
                 document_store=document_store,
+            )
+        else:
+            logger.info(
+                "Generated recipe not persisted because no document_store was provided (score=%s).",
+                "none" if top_score is None else f"{top_score:.4f}",
             )
 
         return recommendation.to_markdown()
