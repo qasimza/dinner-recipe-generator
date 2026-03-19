@@ -1,0 +1,20 @@
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application configuration loaded from environment variables / .env file."""
+
+    openai_api_key: str
+    database_url: str
+    embedding_model: str = "text-embedding-3-small"
+    llm_model: str = "gpt-4o"
+    top_k: int = 3
+
+    model_config = SettingsConfigDict(env_file=".env")
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
