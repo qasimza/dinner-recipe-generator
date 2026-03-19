@@ -33,3 +33,14 @@ class RecipeRecommendation(BaseModel):
             lines.extend(["", "### Modifications", self.modifications])
 
         return "\n".join(lines).strip()
+
+
+class InputValidationResult(BaseModel):
+    is_food_only: bool
+    non_food_items: list[str] = []
+    reason: str
+
+
+class OutputValidationResult(BaseModel):
+    is_valid: bool
+    issues: list[str] = []

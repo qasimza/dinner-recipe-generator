@@ -9,7 +9,8 @@ from haystack.utils import Secret
 from haystack_integrations.components.retrievers.pgvector import PgvectorEmbeddingRetriever
 from haystack_integrations.document_stores.pgvector import PgvectorDocumentStore
 
-from whats_for_dinner.config import Settings
+from whats_for_dinner.config import Settings, get_settings
+from whats_for_dinner.guardrails import validate_recipe_output
 from whats_for_dinner.models import RecipeRecommendation
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ and are not useful for differentiating between them.
 </task>
 
 <grounding_rules>
-- ONLY recommend recipes from the retrieved context above. Never invent or fabricate a recipe.
+- Prefer recommending recipes from the retrieved context. If none are a reasonable match, you may propose a legitimate recipe based on general cooking knowledge.
 - If the user is missing ingredients from the chosen recipe, adapt it by suggesting \
 substitutions or modifying the steps to work with only what the user has. Clearly note any \
 modifications you made.
@@ -130,6 +131,13 @@ def recommend_recipe(ingredients: str, pipeline: Pipeline) -> str:
     raw_reply = replies[0] if isinstance(replies[0], str) else str(replies[0])
     try:
         recommendation = RecipeRecommendation.model_validate(json.loads(raw_reply))
+        output_validation = validate_recipe_output(recommendation, settings=get_settings())
+        if not output_validation.is_valid:
+            logger.warning("Output guardrail blocked response: %s", output_validation.issues)
+            return (
+                "Sorry, I couldn't provide a safe recipe recommendation for that request. "
+                "Please try a different ingredient list."
+            )
         logger.info("Structured recommendation: %s", recommendation.model_dump_json())
         return recommendation.to_markdown()
     except Exception:
